@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-std = "1.13.0"
+clap = "4.5.23"
+color-eyre = "0.6.3"
+futures-util = "0.3.31"
+mdns = "3.0.0"
