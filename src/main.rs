@@ -29,16 +29,14 @@ async fn main() -> Result<()> {
         //         .map(|r| format!("{:#?}", r))
         //         .collect::<Vec<String>>()
         // );
-        let res = response.records().filter_map(self::to_ip_addr).next();
+        let res: Vec<(IpAddr, String)> = response.records().filter_map(self::to_ip_addr).collect();
         // let name: Vec<String> = response
         //     .records()
         //     .filter_map(|r| Some(r.name.clone()))
         //     .collect();
 
-        if let Some((addr, name)) = res {
+        for (addr, name) in res {
             println!("found cast device {} at {}", name, addr);
-        } else {
-            println!("cast device does not advertise address");
         }
     }
 
