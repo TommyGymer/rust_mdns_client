@@ -1,7 +1,9 @@
 use clap::Parser;
 use color_eyre::Result;
+use crossterm::event::{self, Event};
 use futures_util::{pin_mut, stream::StreamExt};
 use mdns::{discover, Record, RecordKind};
+use ratatui::{DefaultTerminal, Frame};
 use std::{net::IpAddr, time::Duration};
 
 /// Simple TUI for discovering mDNS capable devices
@@ -15,11 +17,15 @@ struct Args {
 #[async_std::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+    let terminal = ratatui::init();
 
     let args = Args::parse();
 
     let stream = discover::all(args.query, Duration::from_secs(15))?.listen();
     pin_mut!(stream);
+
+    let result = run(terminal);
+    ratatui::restore();
 
     while let Some(Ok(response)) = stream.next().await {
         let res: Vec<(IpAddr, String)> = response.records().filter_map(self::to_ip_addr).collect();
@@ -29,7 +35,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    Ok(())
+    result
 }
 
 fn to_ip_addr(record: &Record) -> Option<(IpAddr, String)> {
@@ -38,4 +44,17 @@ fn to_ip_addr(record: &Record) -> Option<(IpAddr, String)> {
         RecordKind::AAAA(addr) => Some((addr.into(), record.name.clone())),
         _ => None,
     }
+}
+
+fn run(mut terminal: DefaultTerminal) -> Result<()> {
+    loop {
+        terminal.draw(render)?;
+        if matches!(event::read()?, Event::Key(_)) {
+            break Ok(());
+        }
+    }
+}
+
+fn render(frame: &mut Frame) {
+    frame.render_widget("hello world", frame.area());
 }
