@@ -1,7 +1,7 @@
 use clap::Parser;
 use color_eyre::Result;
 use futures_util::{pin_mut, stream::StreamExt};
-use mdns::{Record, RecordKind};
+use mdns::{discover, Record, RecordKind};
 use std::{net::IpAddr, time::Duration};
 
 /// Simple TUI for discovering mDNS capable devices
@@ -18,22 +18,11 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let stream = mdns::discover::all(args.query, Duration::from_secs(15))?.listen();
+    let stream = discover::all(args.query, Duration::from_secs(15))?.listen();
     pin_mut!(stream);
 
     while let Some(Ok(response)) = stream.next().await {
-        // println!(
-        //     "{:#?}",
-        //     response
-        //         .records()
-        //         .map(|r| format!("{:#?}", r))
-        //         .collect::<Vec<String>>()
-        // );
         let res: Vec<(IpAddr, String)> = response.records().filter_map(self::to_ip_addr).collect();
-        // let name: Vec<String> = response
-        //     .records()
-        //     .filter_map(|r| Some(r.name.clone()))
-        //     .collect();
 
         for (addr, name) in res {
             println!("found cast device {} at {}", name, addr);
