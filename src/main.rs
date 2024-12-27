@@ -5,11 +5,11 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use futures_util::{pin_mut, stream::StreamExt};
 use mdns::{discover, Record, RecordKind};
 use ratatui::{
-    prelude::{Buffer, Rect},
+    prelude::{Buffer, Constraint, Rect},
     style::Stylize,
     symbols::border,
     text::Line,
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, Paragraph, Row, Table, Widget},
     DefaultTerminal, Frame,
 };
 use std::{
@@ -45,6 +45,34 @@ impl RecordEntry {
             IpAddr::V6(addr) => RecordEntry::AAAA(addr, name),
         }
     }
+
+    fn get_name(self) -> String {
+        match self {
+            RecordEntry::A(_, name) => name,
+            RecordEntry::AAAA(_, name) => name,
+        }
+    }
+
+    fn is_ipv4(self) -> bool {
+        match self {
+            RecordEntry::A(_, _) => true,
+            RecordEntry::AAAA(_, _) => false,
+        }
+    }
+
+    fn is_ipv6(self) -> bool {
+        match self {
+            RecordEntry::A(_, _) => false,
+            RecordEntry::AAAA(_, _) => true,
+        }
+    }
+
+    fn get_addr(self) -> IpAddr {
+        match self {
+            RecordEntry::A(addr, _) => IpAddr::V4(addr),
+            RecordEntry::AAAA(addr, _) => IpAddr::V6(addr),
+        }
+    }
 }
 
 impl Display for RecordEntry {
@@ -54,6 +82,31 @@ impl Display for RecordEntry {
             RecordEntry::AAAA(addr, name) => (format!("{}", addr), name),
         };
         write!(f, "{}: {}", name, addr)
+    }
+}
+
+impl RecordEntries {
+    fn find(self, name: String) -> (Option<IpAddr>, Option<IpAddr>) {
+        let mut remaining = self.entries.clone();
+        remaining.retain(|r| r.clone().get_name() == name);
+
+        let mut ipv4 = remaining.clone();
+        ipv4.retain(|r| r.clone().is_ipv4());
+
+        let mut ipv6 = remaining.clone();
+        ipv6.retain(|r| r.clone().is_ipv6());
+
+        let v4 = match ipv4.pop() {
+            Some(ip) => Some(ip.get_addr()),
+            None => None,
+        };
+
+        let v6 = match ipv6.pop() {
+            Some(ip) => Some(ip.get_addr()),
+            None => None,
+        };
+
+        (v4, v6)
     }
 }
 
@@ -113,11 +166,54 @@ impl Widget for &App {
             .title(title.centered())
             .border_set(border::THICK);
 
-        // TODO: figure out how to render this better
-        Paragraph::new(format!("{}", self.records.lock().unwrap()))
-            .centered()
+        let records: RecordEntries = self.records.lock().unwrap().clone();
+        let mut hosts: Vec<String> = records
+            .entries
+            .iter()
+            .map(|r| r.clone().get_name())
+            .collect();
+        let mut seen: Vec<String> = Vec::new();
+
+        hosts.retain(|h| {
+            let r = !seen.contains(h);
+            seen.push(h.clone());
+            r
+        });
+
+        let rows: Vec<Row> = hosts
+            .iter()
+            .map(|h| {
+                let (ipv4, ipv6) = records.clone().find(h.clone());
+                let v4 = match ipv4 {
+                    Some(ip) => format!("{:?}", ip),
+                    None => String::from(""),
+                };
+                let v6 = match ipv6 {
+                    Some(ip) => format!("{:?}", ip),
+                    None => String::from(""),
+                };
+                Row::new(vec![String::from(h), v4, v6])
+            })
+            .collect();
+        let widths = [
+            Constraint::Percentage(40),
+            Constraint::Percentage(30),
+            Constraint::Percentage(30),
+        ];
+        Table::new(rows, widths)
+            .header(
+                Row::new(vec!["Host", "IPv4", "IPv6"])
+                    .bold()
+                    .bottom_margin(1),
+            )
             .block(block)
             .render(area, buf);
+
+        // TODO: figure out how to render this better
+        // Paragraph::new(format!("{}", self.records.lock().unwrap()))
+        //     .centered()
+        //     .block(block)
+        //     .render(area, buf);
     }
 }
 
