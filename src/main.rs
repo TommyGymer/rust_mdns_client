@@ -166,6 +166,8 @@ impl Widget for &App {
             .title(title.centered())
             .border_set(border::THICK);
 
+        // TODO: add field to specify the mDNS query
+
         let records: RecordEntries = self.records.lock().unwrap().clone();
         let mut hosts: Vec<String> = records
             .entries
@@ -183,6 +185,7 @@ impl Widget for &App {
         let rows: Vec<Row> = hosts
             .iter()
             .map(|h| {
+                // TODO: this clone shouldn't be needed
                 let (ipv4, ipv6) = records.clone().find(h.clone());
                 let v4 = match ipv4 {
                     Some(ip) => format!("{:?}", ip),
@@ -208,12 +211,6 @@ impl Widget for &App {
             )
             .block(block)
             .render(area, buf);
-
-        // TODO: figure out how to render this better
-        // Paragraph::new(format!("{}", self.records.lock().unwrap()))
-        //     .centered()
-        //     .block(block)
-        //     .render(area, buf);
     }
 }
 
