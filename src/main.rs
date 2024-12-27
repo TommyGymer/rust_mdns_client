@@ -13,6 +13,7 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use std::{
+    fmt::{self, Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, Mutex},
     time::Duration,
@@ -26,10 +27,15 @@ struct Args {
     query: String,
 }
 
-#[derive(Debug, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
 enum RecordEntry {
     A(Ipv4Addr, String),
     AAAA(Ipv6Addr, String),
+}
+
+#[derive(Default, Debug, Clone)]
+struct RecordEntries {
+    entries: Vec<RecordEntry>,
 }
 
 impl RecordEntry {
@@ -41,10 +47,29 @@ impl RecordEntry {
     }
 }
 
+impl Display for RecordEntry {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let (addr, name) = match self {
+            RecordEntry::A(addr, name) => (format!("{}", addr), name),
+            RecordEntry::AAAA(addr, name) => (format!("{}", addr), name),
+        };
+        write!(f, "{}: {}", name, addr)
+    }
+}
+
+impl Display for RecordEntries {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        for r in self.entries.clone() {
+            write!(f, "{}\n", r)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct App {
     exit: bool,
-    records: Arc<Mutex<Vec<RecordEntry>>>,
+    records: Arc<Mutex<RecordEntries>>,
 }
 
 impl App {
@@ -89,7 +114,7 @@ impl Widget for &App {
             .border_set(border::THICK);
 
         // TODO: figure out how to render this better
-        Paragraph::new(format!("{:#?}", self.records.lock().unwrap()))
+        Paragraph::new(format!("{}", self.records.lock().unwrap()))
             .centered()
             .block(block)
             .render(area, buf);
@@ -115,13 +140,17 @@ async fn main() -> Result<()> {
                 response.records().filter_map(self::to_ip_addr).collect();
 
             for (addr, name) in res {
-                records.lock().unwrap().retain(|r| !match r {
+                records.lock().unwrap().entries.retain(|r| !match r {
                     RecordEntry::A(_, n) => addr.is_ipv4() && *n == name,
                     RecordEntry::AAAA(_, n) => addr.is_ipv6() && *n == name,
                 });
-                records.lock().unwrap().push(RecordEntry::new(addr, name));
+                records
+                    .lock()
+                    .unwrap()
+                    .entries
+                    .push(RecordEntry::new(addr, name));
             }
-            records.lock().unwrap().sort();
+            records.lock().unwrap().entries.sort();
         }
     });
 
