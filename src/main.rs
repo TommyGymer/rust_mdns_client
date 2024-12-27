@@ -1,12 +1,19 @@
 use async_std::task;
 use clap::Parser;
 use color_eyre::Result;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use futures_util::{pin_mut, stream::StreamExt};
 use mdns::{discover, Record, RecordKind};
-use ratatui::{DefaultTerminal, Frame};
+use ratatui::{
+    prelude::{Buffer, Rect},
+    style::Stylize,
+    symbols::border,
+    text::Line,
+    widgets::{Block, Paragraph, Widget},
+    DefaultTerminal, Frame,
+};
 use std::{
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -19,17 +26,87 @@ struct Args {
     query: String,
 }
 
+#[derive(Debug, Ord, PartialOrd, PartialEq, Eq)]
+enum RecordEntry {
+    A(Ipv4Addr, String),
+    AAAA(Ipv6Addr, String),
+}
+
+impl RecordEntry {
+    fn new(ip: IpAddr, name: String) -> Self {
+        match ip {
+            IpAddr::V4(addr) => RecordEntry::A(addr, name),
+            IpAddr::V6(addr) => RecordEntry::AAAA(addr, name),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct App {
+    exit: bool,
+    records: Arc<Mutex<Vec<RecordEntry>>>,
+}
+
+impl App {
+    fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| self.draw(frame))?;
+            match event::poll(Duration::from_millis(8)) {
+                Ok(true) => self.handle_events()?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn draw(&self, frame: &mut Frame) {
+        frame.render_widget(self, frame.area());
+    }
+
+    fn handle_events(&mut self) -> Result<()> {
+        match event::read()? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
+            }
+            _ => {}
+        };
+        Ok(())
+    }
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit = true,
+            _ => {}
+        }
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let title = Line::from(" mDNS ".bold());
+        let block = Block::bordered()
+            .title(title.centered())
+            .border_set(border::THICK);
+
+        // TODO: figure out how to render this better
+        Paragraph::new(format!("{:#?}", self.records.lock().unwrap()))
+            .centered()
+            .block(block)
+            .render(area, buf);
+    }
+}
+
 #[async_std::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    let terminal = ratatui::init();
+    let mut terminal = ratatui::init();
 
     let args = Args::parse();
 
-    let stream = discover::all(args.query, Duration::from_secs(15))?.listen();
+    let stream = discover::all(args.query, Duration::from_secs(5))?.listen();
 
-    let records: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let records_out = records.clone();
+    let mut app = App::default();
+    let records = Arc::clone(&app.records);
 
     let child = task::spawn(async move {
         pin_mut!(stream);
@@ -38,16 +115,17 @@ async fn main() -> Result<()> {
                 response.records().filter_map(self::to_ip_addr).collect();
 
             for (addr, name) in res {
-                // println!("found cast device {} at {}", name, addr);
-                records
-                    .lock()
-                    .unwrap()
-                    .push(format!("found cast device {} at {}", name, addr));
+                records.lock().unwrap().retain(|r| !match r {
+                    RecordEntry::A(_, n) => addr.is_ipv4() && *n == name,
+                    RecordEntry::AAAA(_, n) => addr.is_ipv6() && *n == name,
+                });
+                records.lock().unwrap().push(RecordEntry::new(addr, name));
             }
+            records.lock().unwrap().sort();
         }
     });
 
-    let result = run(terminal, records_out);
+    let result = app.run(&mut terminal);
     ratatui::restore();
 
     child.cancel().await;
@@ -60,17 +138,4 @@ fn to_ip_addr(record: &Record) -> Option<(IpAddr, String)> {
         RecordKind::AAAA(addr) => Some((addr.into(), record.name.clone())),
         _ => None,
     }
-}
-
-fn run(mut terminal: DefaultTerminal, records: Arc<Mutex<Vec<String>>>) -> Result<()> {
-    loop {
-        terminal.draw(render)?;
-        if matches!(event::read()?, Event::Key(_)) {
-            break Ok(());
-        }
-    }
-}
-
-fn render(frame: &mut Frame) {
-    frame.render_widget("hello world", frame.area());
 }
