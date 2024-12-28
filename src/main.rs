@@ -25,7 +25,7 @@ use std::{
 #[command(version, about)]
 struct Args {
     /// The mDNS query, e.g., "_http._tcp.local"
-    query: String,
+    query: Option<String>,
 }
 
 #[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
@@ -296,9 +296,14 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut app = App::default();
-    app.query = args.query;
+    match args.query {
+        Some(q) => {
+            app.query = q;
+            app.start_scanner().await;
+        }
+        None => app.query = String::from(""),
+    };
     app.editing = false;
-    app.start_scanner().await;
 
     let result = app.run(&mut terminal).await;
     ratatui::restore();
