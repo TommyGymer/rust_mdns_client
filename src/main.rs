@@ -205,10 +205,16 @@ impl App {
                 KeyCode::Esc => {
                     self.editing = false;
                     self.start_scanner().await;
+                    self.records.lock().unwrap().entries.clear();
                 }
                 KeyCode::Backspace => {
                     self.query.pop().unwrap_or('a');
                     ()
+                }
+                KeyCode::Enter => {
+                    self.editing = false;
+                    self.start_scanner().await;
+                    self.records.lock().unwrap().entries.clear();
                 }
                 _ => {}
             },
@@ -253,7 +259,6 @@ impl Widget for &App {
         let rows: Vec<Row> = hosts
             .iter()
             .map(|h| {
-                // TODO: this clone shouldn't be needed
                 let (ipv4, ipv6) = records.clone().find(h.clone());
                 let v4 = match ipv4 {
                     Some(ip) => format!("{:?}", ip),
@@ -295,10 +300,10 @@ async fn main() -> Result<()> {
     app.editing = false;
     app.start_scanner().await;
 
-    let result = app.run(&mut terminal);
+    let result = app.run(&mut terminal).await;
     ratatui::restore();
 
-    result.await
+    result
 }
 
 fn to_ip_addr(record: &Record) -> Option<(IpAddr, String)> {
