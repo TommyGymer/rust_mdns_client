@@ -2,6 +2,7 @@
 name = "rust_mdns_client"
 version = "0.1.0"
 edition = "2021"
+description = "A simple TUI mDNS client"
 
 [dependencies]
 async-std = "1.13.0"
