@@ -232,8 +232,12 @@ impl Widget for &App {
             .title(Line::from(" Records ".bold()))
             .border_set(border::THICK);
 
-        let [search_area, table_area] =
-            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).areas(area);
+        let [search_area, table_area, usage_area] = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+        .areas(area);
 
         Paragraph::new(match self.editing {
             false => self.query.clone(),
@@ -284,6 +288,10 @@ impl Widget for &App {
             )
             .block(table_block)
             .render(table_area, buf);
+
+        Paragraph::new(Line::from("Exit: q/esc | Edit query: /"))
+            .centered()
+            .render(usage_area, buf);
     }
 }
 
