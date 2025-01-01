@@ -17,7 +17,7 @@ use std::{
     mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// Simple TUI for discovering mDNS capable devices
@@ -127,6 +127,45 @@ pub struct App {
     query: String,
     editing: bool,
     child: Option<JoinHandle<()>>,
+    cursor: Cursor,
+}
+
+#[derive(Debug, Clone, Default)]
+enum CursorState {
+    Show,
+    #[default]
+    Hide,
+}
+
+#[derive(Debug, Clone)]
+struct Cursor {
+    state: CursorState,
+    timer: Instant,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Cursor {
+            state: CursorState::Hide,
+            timer: Instant::now(),
+        }
+    }
+}
+
+impl Cursor {
+    fn update(&mut self) {
+        self.timer = Instant::now();
+    }
+
+    fn update_current_state(&mut self) {
+        if self.timer.elapsed() > Duration::from_millis(400) {
+            match self.state {
+                CursorState::Hide => self.state = CursorState::Show,
+                CursorState::Show => self.state = CursorState::Hide,
+            }
+            self.update();
+        }
+    }
 }
 
 impl App {
@@ -137,6 +176,7 @@ impl App {
                 Ok(true) => self.handle_events().await?,
                 _ => {}
             }
+            self.cursor.update_current_state();
         }
         if let Some(c) = mem::take(&mut self.child) {
             c.cancel().await;
@@ -239,9 +279,10 @@ impl Widget for &App {
         ])
         .areas(area);
 
-        Paragraph::new(match self.editing {
-            false => self.query.clone(),
-            true => format!("{}_", self.query.clone()),
+        Paragraph::new(match (self.editing, self.cursor.state.clone()) {
+            (false, _) => self.query.clone(),
+            (_, CursorState::Hide) => self.query.clone(),
+            (true, CursorState::Show) => format!("{}_", self.query.clone()),
         })
         .block(search_block)
         .render(search_area, buf);
@@ -289,9 +330,12 @@ impl Widget for &App {
             .block(table_block)
             .render(table_area, buf);
 
-        Paragraph::new(Line::from("Exit: q/esc | Edit query: /"))
-            .centered()
-            .render(usage_area, buf);
+        Paragraph::new(Line::from(match self.editing {
+            false => "Exit: q/esc | Edit query: /",
+            true => "Exit editing: esc",
+        }))
+        .centered()
+        .render(usage_area, buf);
     }
 }
 
