@@ -342,10 +342,11 @@ impl Widget for &App {
 #[async_std::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    let mut terminal = ratatui::init();
-    terminal.clear()?;
 
     let args = Args::parse();
+
+    let mut terminal = ratatui::init();
+    terminal.clear()?;
 
     let mut app = App::default();
     match args.query {
